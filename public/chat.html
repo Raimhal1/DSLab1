@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <link rel="stylesheet" href="/css/style.css">
+    <title>Document</title>
+</head>
+<body>
+<section>
+    <div style="position: relative; padding-left: 2px">
+        <form id="privateForm" style="position: fixed; top: 50%; left: 50%; visibility: hidden; z-index: 10;background: white; border: 1px solid darkgrey; padding: 15px; border-radius: 3px" action="privateAction()">
+            <div class="form-group flex-grow-1">
+                <input id="privateMessage" type="text" name="message" placeholder="Message" required autocomplete="off">
+            </div>
+            <div class="form-group flex-grow-1">
+                <input id="privateUser" type="text" name="user" placeholder="User" required autocomplete="off">
+            </div>
+            <div class="form-group" style="display: flex; justify-content: end">
+                <button onclick="console.log('send private message')">Send</button>
+            </div>
+        </form>
+
+        <div class="row" style="margin: 0 !important;">
+            <div id="sidebar" class="col-4 vh-100 pl-3 pt-3">
+
+            </div>
+
+            <div id="chat" class="col-8 d-flex flex-column flex-grow-1 vh-100 p-0" style="position: relative">
+
+                <div id="messages" class="flex-grow-1" style="position: relative">
+                    <div id="feedback" style="padding: 2px;position: fixed; left: 50%; top: 20px; background: rgba(255,255,255,0.73); text-align: center; z-index: 10"></div>
+                </div>
+
+
+                <div id="compose" style="">
+                    <button onClick="toggleFormVisibility()" class="btn btn-success btn-lg">Send private</button>
+                    <form id="message-form" class="form-inline">
+                        <div class="form-group flex-grow-1">
+                            <input id="message" type="text" name="message" placeholder="Message" required autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <button id="messageButton" class="btn btn-warning btn-lg">Send</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+</section>
+
+<script id="message-template" type="text/html">
+    <div class="alert message {{bgClass}}">
+        <div>
+            <span class="message-name">{{username}}</span>
+            <span class="message-meta">{{createdAt}}</span>
+        </div>
+        <div>{{message}}</div>
+    </div>
+</script>
+
+<script id="sidebar-template" type="text/html">
+    <div class="alert alert-primary">
+        Room: <strong>{{room}}</strong><br>
+        Username: <strong>{{currentUser}}</strong>
+    </div>
+
+    <ul class="list-group">
+        <li class="list-group-item list-group-item-primary">Users in the chatroom</li>
+        <li style="overflow-y: scroll">
+        {{#users}}
+        <div class="list-group-item">{{username}}</div>
+        {{/users}}
+        </li>
+    </ul>
+
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/3.1.0/mustache.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment-with-locales.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qs/6.9.1/qs.min.js"></script>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    //elements
+    const $messageForm = document.querySelector("#message-form")
+    const $messageFormInput = $messageForm.querySelector("#message");
+    const $messageFormButton = document.querySelector("#messageButton")
+    const $messages = document.querySelector("#messages")
+    const $feedback = document.querySelector("#feedback")
+    const $privateForm = document.querySelector("#privateForm")
+    const $privateMessageInput = document.querySelector("#privateMessage")
+    const $privateUserInput = document.querySelector("#privateUser")
+    hideForm()
+
+    $feedback.style.padding = 0
+
+    //Templates
+    const messageTemplate = document.querySelector("#message-template").innerHTML
+    const sidebarTemplate = document.querySelector('#sidebar-template').innerHTML
+
+    // Options
+    const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true })
+
+    var socket = io();
+    var typing=false;
+    var timeout=undefined;
+    var user;
+
+    function toggleFormVisibility() {
+        if($privateForm.style.visibility === "visible")
+            $privateForm.style.visibility = "hidden"
+        else
+            $privateForm.style.visibility = "visible"
+    }
+
+    function showForm(){
+        $privateForm.style.visibility = "visible"
+    }
+
+    function hideForm(){
+        $privateForm.style.visibility = "hidden"
+    }
+
+    socket.on('message', (message) => {
+        console.log(message)
+        let bgClass = 'bg-warning text-white'
+        if (message.username == username.toLowerCase()) {
+            bgClass = 'bg-success text-white pull-right'
+        } else if (message.username == 'Admin') {
+            bgClass = 'bg-info text-white'
+        }
+
+        const html = Mustache.render(messageTemplate, {
+            username: message.username,
+            message: message.text,
+            bgClass: bgClass,
+            createdAt: moment(message.createdAt).format('h:mm a')
+        })
+
+        const scrollHeight = $messages.scrollHeight - $messages.scrollTop
+        $messages.insertAdjacentHTML('beforeend', html)
+        console.log($messages)
+        if (message.username == username.toLowerCase() || scrollHeight === $messages.clientHeight) {
+            $messages.scrollTo(0, $messages.scrollHeight)
+        }
+    })
+
+
+    socket.on('roomData', ({ users }) => {
+        const html = Mustache.render(sidebarTemplate, {
+            room,
+            currentUser: username,
+            users
+        })
+        document.querySelector('#sidebar').innerHTML = html
+    })
+
+    socket.on('typing', (username) => {
+        console.log(`${username} is typing ...`)
+        $feedback.innerHTML = `<p>${username} is typing ...</p>`
+        setTimeout(()=> {
+            $feedback.innerHTML = ""
+            $feedback.style.padding = 0
+        }, 3000)
+    })
+
+    $messageFormInput.addEventListener('keypress', () => {
+        $feedback.style.padding = "2px"
+        socket.emit("typing")
+    })
+
+    $privateForm.addEventListener('submit', (e) => {
+        e.preventDefault()
+        const message = $privateMessageInput.value
+        const username = $privateUserInput.value
+
+        socket.emit('sendPrivateMessage', message, username, (error) => {
+            $privateUserInput.value = ''
+
+            if (error)
+                return console.log(error)
+
+            $privateMessageInput.value = ''
+            hideForm()
+        })
+    })
+
+    $messageForm.addEventListener('submit', (e) => {
+        e.preventDefault()
+
+        $messageFormButton.setAttribute('disabled', 'disabled')
+
+        const message = e.target.elements.message.value
+
+        socket.emit('sendMessage', message, (error) => {
+            $messageFormButton.removeAttribute('disabled')
+            $messageFormInput.value = ''
+            $messageFormInput.focus()
+
+            if (error)
+                return console.log(error)
+
+
+            $feedback.innerHTML = ""
+            $feedback.style.padding = 0
+            console.log('Message delivered!')
+        })
+    })
+
+    socket.emit('join', { username, room }, (error) => {
+        if (error) {
+            alert(error)
+            location.href = '/'
+        }
+    })
+
+</script>
+</body>
+</html>
